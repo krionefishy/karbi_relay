@@ -1,0 +1,8 @@
+[Unit]
+Description=Daily SQLite backup of the relay
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/relay/app/deploy/backup.sh

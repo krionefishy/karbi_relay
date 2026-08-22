@@ -1,0 +1,49 @@
+name: relay
+
+services:
+  relay:
+    build:
+      context: .
+    restart: unless-stopped
+    mem_limit: 256m
+    # Published on loopback only. Docker writes its own iptables rules and would
+    # otherwise expose the port to the internet past ufw; the host nginx in
+    # front of it terminates TLS and enforces the IP allowlist.
+    ports:
+      - "127.0.0.1:${RELAY_PORT:-8081}:8000"
+    environment:
+      CHANNEL_JWT_SECRET: ${CHANNEL_JWT_SECRET:?set CHANNEL_JWT_SECRET in .env}
+      CHANNEL_ISSUER: ${CHANNEL_ISSUER:-marketplace-auto}
+      CHANNEL_INBOUND_AUDIENCE: ${CHANNEL_INBOUND_AUDIENCE:-relay}
+      CHANNEL_OUTBOUND_AUDIENCE: ${CHANNEL_OUTBOUND_AUDIENCE:-main}
+      CHANNEL_JWT_TTL_SECONDS: ${CHANNEL_JWT_TTL_SECONDS:-300}
+      CREDENTIALS_ENCRYPTION_KEYS: ${CREDENTIALS_ENCRYPTION_KEYS:?set CREDENTIALS_ENCRYPTION_KEYS in .env}
+      CREDENTIALS_FINGERPRINT_KEY: ${CREDENTIALS_FINGERPRINT_KEY:?set CREDENTIALS_FINGERPRINT_KEY in .env}
+      TELEGRAM_API_BASE_URL: ${TELEGRAM_API_BASE_URL:-https://api.telegram.org}
+      TELEGRAM_POLL_TIMEOUT_SECONDS: ${TELEGRAM_POLL_TIMEOUT_SECONDS:-25}
+      TELEGRAM_REQUEST_TIMEOUT_SECONDS: ${TELEGRAM_REQUEST_TIMEOUT_SECONDS:-40}
+      RELAY_DATABASE_PATH: /data/relay.sqlite3
+      BOT_REFRESH_SECONDS: ${BOT_REFRESH_SECONDS:-60}
+      DEDUPE_TTL_HOURS: ${DEDUPE_TTL_HOURS:-24}
+      INBOUND_RETENTION_DAYS: ${INBOUND_RETENTION_DAYS:-7}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    volumes:
+      - relay_data:/data
+      # Дампы кладутся на хост, а не в тот же volume: смысл бэкапа в том, чтобы
+      # он пережил потерю volume, а в идеале и уехал с машины.
+      - ${BACKUP_DIR:-/opt/relay/backups}:/backups
+    logging:
+      # Без этого json-лог контейнера растёт без предела: на 15 ГБ диска это
+      # вопрос месяцев, а чинится одной секцией.
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  relay_data:
