@@ -10,7 +10,7 @@ from datetime import UTC, datetime, timedelta
 
 import jwt
 
-from relay.config import ChannelConfig
+from relay.core.config import ChannelConfig
 
 
 class ChannelAuthError(Exception):

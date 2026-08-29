@@ -7,7 +7,7 @@ from cryptography.fernet import Fernet
 from fastapi.testclient import TestClient
 
 from relay.app import create_app
-from relay.config import ChannelConfig, Config, TelegramConfig
+from relay.core.config import ChannelConfig, Config, TelegramConfig
 
 TELEGRAM = "https://api.telegram.invalid"
 SECRET = "test-secret-that-is-long-enough-for-validation"

@@ -10,13 +10,13 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
-from relay.auth import ChannelAuth
-from relay.config import Config, load_config
-from relay.crypto import CredentialCipher
-from relay.poller import BotSupervisor
-from relay.routes import public_router, router
-from relay.storage import Storage
-from relay.telegram import TelegramClient
+from relay.core.auth import ChannelAuth
+from relay.core.config import Config, load_config
+from relay.core.crypto import CredentialCipher
+from relay.core.storage import Storage
+from relay.http.routes import public_router, router
+from relay.telegram.client import TelegramClient
+from relay.telegram.poller import BotSupervisor
 
 
 def configure_logging(level: str) -> None:

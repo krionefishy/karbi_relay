@@ -16,9 +16,9 @@ import logging
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
-from relay.crypto import CredentialCipher, CredentialDecryptionError
-from relay.storage import BotRecord, Storage
-from relay.telegram import (
+from relay.core.crypto import CredentialCipher, CredentialDecryptionError
+from relay.core.storage import BotRecord, Storage
+from relay.telegram.client import (
     MessengerAuthError,
     MessengerConflictError,
     MessengerPermanentError,

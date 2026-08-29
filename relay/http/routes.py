@@ -10,8 +10,8 @@ from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
 
-from relay.auth import ChannelAuth, ChannelAuthError
-from relay.schemas import (
+from relay.core.auth import ChannelAuth, ChannelAuthError
+from relay.http.schemas import (
     BotReadiness,
     BotRequest,
     BotResponse,
@@ -20,7 +20,7 @@ from relay.schemas import (
     SendResponse,
     UpdatesResponse,
 )
-from relay.telegram import (
+from relay.telegram.client import (
     MessengerAuthError,
     MessengerConflictError,
     MessengerPermanentError,

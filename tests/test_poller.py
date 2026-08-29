@@ -4,9 +4,9 @@ import json
 
 import pytest
 
-from relay.poller import BotPoller, PollerState
-from relay.storage import Storage
-from relay.telegram import NormalizedUpdate, Sender, TelegramClient
+from relay.core.storage import Storage
+from relay.telegram.client import NormalizedUpdate, Sender, TelegramClient
+from relay.telegram.poller import BotPoller, PollerState
 
 UPDATE = {
     "update_id": 500,
