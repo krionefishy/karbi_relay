@@ -1,0 +1,126 @@
+name: CI
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  relay:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.8.11"
+          enable-cache: true
+
+      - name: Install Python dependencies
+        run: uv sync --locked
+
+      - name: Verify lockfile
+        run: uv lock --check
+
+      - name: Run Ruff
+        run: |
+          uv run ruff check relay tests
+          uv run ruff format --check relay tests
+
+      - name: Run mypy
+        run: uv run mypy relay
+
+      - name: Run tests
+        run: uv run pytest
+
+      - name: Check deploy scripts
+        run: |
+          for script in deploy/*.sh; do bash -n "$script"; done
+          shellcheck --severity=warning deploy/*.sh
+
+      - name: Validate compose file
+        env:
+          CHANNEL_JWT_SECRET: ci
+          CREDENTIALS_ENCRYPTION_KEYS: ci
+          CREDENTIALS_FINGERPRINT_KEY: ci
+        run: docker compose -f compose.yaml config --quiet
+
+      - name: Build the relay image
+        run: docker build -t marketplace-auto-relay:ci .
+
+  deploy:
+    # Выкатывается только то, что прошло проверки выше, и только с main.
+    # Включается переменной репозитория DEPLOY_ENABLED=true.
+    needs: relay
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && vars.DEPLOY_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: production
+    concurrency:
+      group: production-deploy
+      cancel-in-progress: false
+
+    steps:
+      - name: Deploy tested revision
+        uses: appleboy/ssh-action@v1.2.5
+        env:
+          DEPLOY_SHA: ${{ github.sha }}
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USERNAME }}
+          port: ${{ secrets.SSH_PORT }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          fingerprint: ${{ secrets.SSH_FINGERPRINT }}
+          envs: DEPLOY_SHA
+          command_timeout: 15m
+          script: |
+            set -eu
+
+            cd /opt/relay/app
+            test -f .env
+
+            # Выкатываем ровно тот коммит, который проверил CI, и только если он
+            # действительно лежит в origin/main — не любой присланный SHA.
+            git fetch --prune origin main
+            git cat-file -e "${DEPLOY_SHA}^{commit}"
+            git merge-base --is-ancestor "${DEPLOY_SHA}" origin/main
+            git checkout --force main
+            git reset --hard "${DEPLOY_SHA}"
+
+            compose="sudo docker compose --env-file .env -f compose.yaml"
+            $compose build
+            $compose up -d --remove-orphans
+
+            port="$(grep -E '^RELAY_PORT=' .env | cut -d= -f2)"
+            port="${port:-8081}"
+
+            ready=false
+            for attempt in $(seq 1 24); do
+              if curl --fail --silent --max-time 5 "http://127.0.0.1:${port}/health" >/dev/null; then
+                ready=true
+                break
+              fi
+              sleep 5
+            done
+
+            if [ "$ready" != "true" ]; then
+              $compose ps
+              $compose logs --tail=200 relay
+              exit 1
+            fi
+
+            $compose ps
+            sudo docker image prune --force
