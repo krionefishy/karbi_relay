@@ -5,6 +5,8 @@ rest of the service alone: the API, the poller and the storage speak in
 `bot_code`, `recipient` and `NormalizedUpdate`, never in Telegram's shapes.
 """
 
+import base64
+import binascii
 import logging
 from dataclasses import dataclass
 from typing import Any
@@ -74,6 +76,28 @@ class BotIdentity:
     invite_link_template: str
 
 
+@dataclass(frozen=True)
+class Photo:
+    """A PNG to send next to the text, with its own short caption."""
+
+    png: bytes
+    caption: str = ""
+
+    @classmethod
+    def from_base64(cls, encoded: str, caption: str = "") -> "Photo":
+        try:
+            raw = base64.b64decode(encoded, validate=True)
+        except (binascii.Error, ValueError) as error:
+            raise MessengerPermanentError("attachment is not valid base64") from error
+        if not raw.startswith(b"\x89PNG\r\n\x1a\n"):
+            raise MessengerPermanentError("attachment is not a PNG")
+        return cls(png=raw, caption=caption)
+
+
+# Telegram caps a photo caption at 1024 characters; a longer text goes as its own message.
+CAPTION_LIMIT = 1024
+
+
 class TelegramClient:
     """Every call carries the token explicitly: one process serves many bots."""
 
@@ -117,12 +141,36 @@ class TelegramClient:
             raise MessengerTemporaryError("getUpdates returned an unexpected body")
         return [update for raw in payload if (update := self._normalize(raw)) is not None]
 
-    async def send(self, token: str, recipient: str, text: str) -> str | None:
+    async def send(self, token: str, recipient: str, text: str, photo: Photo | None = None) -> str | None:
+        """Text, or text with a picture.
+
+        A short text rides as the photo's caption — one message in the chat.
+        A long one goes first as its own message, then the photo with its short
+        caption; the reference returned is the text's, that is what the caller
+        deduplicates on.
+        """
+        if photo is not None and len(text) <= CAPTION_LIMIT:
+            return self._message_ref(await self._send_photo(token, recipient, photo.png, text))
         payload = await self._call(
             token,
             "sendMessage",
             {"chat_id": recipient, "text": text, "disable_web_page_preview": True},
         )
+        reference = self._message_ref(payload)
+        if photo is not None:
+            await self._send_photo(token, recipient, photo.png, photo.caption)
+        return reference
+
+    async def _send_photo(self, token: str, recipient: str, png: bytes, caption: str) -> Any:
+        return await self._call_multipart(
+            token,
+            "sendPhoto",
+            data={"chat_id": recipient, "caption": caption[:CAPTION_LIMIT]},
+            files={"photo": ("qr.png", png, "image/png")},
+        )
+
+    @staticmethod
+    def _message_ref(payload: Any) -> str | None:
         if isinstance(payload, dict) and isinstance(payload.get("message_id"), int):
             return str(payload["message_id"])
         return None
@@ -158,6 +206,17 @@ class TelegramClient:
         try:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
                 response = await client.post(url, json=payload)
+        except httpx.HTTPError as error:
+            raise MessengerTemporaryError(f"{method} failed: {type(error).__name__}") from error
+        return self._unwrap(method, response)
+
+    async def _call_multipart(
+        self, token: str, method: str, *, data: dict[str, Any], files: dict[str, tuple[str, bytes, str]]
+    ) -> Any:
+        url = f"{self.base_url}/bot{token}/{method}"
+        try:
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                response = await client.post(url, data=data, files=files)
         except httpx.HTTPError as error:
             raise MessengerTemporaryError(f"{method} failed: {type(error).__name__}") from error
         return self._unwrap(method, response)

@@ -30,6 +30,20 @@ class BotResponse(BaseModel):
     invite_link_template: str
 
 
+class Attachment(BaseModel):
+    """A picture next to the text — a QR code, for now.
+
+    Bytes come base64-encoded inside JSON: one request, one idempotency key,
+    no multipart on the channel. Two megabytes is far above any QR.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    kind: Literal["photo"] = "photo"
+    png_base64: Annotated[str, Field(min_length=1, max_length=2_800_000)]
+    caption: Annotated[str, Field(max_length=1024)] = ""
+
+
 class SendRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -37,6 +51,7 @@ class SendRequest(BaseModel):
     recipient: Annotated[str, Field(min_length=1, max_length=128)]
     text: Annotated[str, Field(min_length=1, max_length=4096)]
     idempotency_key: Annotated[str, Field(min_length=1, max_length=128)]
+    attachment: Attachment | None = None
 
 
 class SendResponse(BaseModel):

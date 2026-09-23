@@ -26,6 +26,7 @@ from relay.telegram.client import (
     MessengerPermanentError,
     MessengerRateLimited,
     MessengerTemporaryError,
+    Photo,
 )
 
 logger = logging.getLogger("relay.http")
@@ -106,7 +107,12 @@ async def send_message(payload: SendRequest, request: Request) -> SendResponse:
 
     token = cipher.decrypt(bot.encrypted_token)
     try:
-        sent_ref = await client.send(token, payload.recipient, payload.text)
+        photo = (
+            Photo.from_base64(payload.attachment.png_base64, payload.attachment.caption)
+            if payload.attachment is not None
+            else None
+        )
+        sent_ref = await client.send(token, payload.recipient, payload.text, photo)
     except MessengerRateLimited as error:
         # The header has to ride on the exception: headers set on a Response
         # object are dropped when FastAPI renders an HTTPException instead.

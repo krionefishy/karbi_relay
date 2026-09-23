@@ -105,6 +105,63 @@ class TestBotRegistration:
 
 
 class TestSending:
+    # Минимальный валидный PNG 1×1 — Telegram содержимое не увидит, маршруты замоканы.
+    PNG = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
+
+    def _send_with_photo(self, client, *, text: str, key: str = "photo-1"):
+        with respx.mock(assert_all_called=False) as router:
+            message = router.post(re.compile(rf"{TELEGRAM}/bot.*/sendMessage")).mock(
+                return_value=Response(200, json={"ok": True, "result": {"message_id": 501}})
+            )
+            photo = router.post(re.compile(rf"{TELEGRAM}/bot.*/sendPhoto")).mock(
+                return_value=Response(200, json={"ok": True, "result": {"message_id": 502}})
+            )
+            response = client.post(
+                "/api/v1/messages/send",
+                json={
+                    "bot_code": "turnover-alerts",
+                    "recipient": "-100123",
+                    "text": text,
+                    "idempotency_key": key,
+                    "attachment": {"kind": "photo", "png_base64": self.PNG, "caption": "Код на 22 сент.: 412"},
+                },
+                headers=auth_header(),
+            )
+            return response, message, photo
+
+    def test_a_short_text_rides_as_the_photo_caption(self, client) -> None:
+        register(client)
+        response, message, photo = self._send_with_photo(client, text="Код получения на 22 сент.: 412")
+        assert response.status_code == 200, response.text
+        assert response.json()["message_ref"] == "502"
+        assert message.call_count == 0 and photo.call_count == 1
+        body = photo.calls[0].request.content
+        assert b'name="caption"' in body and b"412" in body and b"image/png" in body
+
+    def test_a_long_text_goes_first_then_the_photo(self, client) -> None:
+        register(client)
+        response, message, photo = self._send_with_photo(client, text="x" * 1100, key="photo-2")
+        assert response.status_code == 200, response.text
+        # Ссылка — на текст: по нему дедуплицирует основной сервер.
+        assert response.json()["message_ref"] == "501"
+        assert message.call_count == 1 and photo.call_count == 1
+
+    def test_a_broken_attachment_is_refused_not_retried(self, client) -> None:
+        register(client)
+        with respx.mock(assert_all_called=False):
+            response = client.post(
+                "/api/v1/messages/send",
+                json={
+                    "bot_code": "turnover-alerts",
+                    "recipient": "-100123",
+                    "text": "x",
+                    "idempotency_key": "photo-3",
+                    "attachment": {"kind": "photo", "png_base64": "bm90IGEgcG5n", "caption": ""},
+                },
+                headers=auth_header(),
+            )
+        assert response.status_code == 422
+
     def _send(self, client, telegram_response: Response, key: str = "msg-1"):
         with respx.mock(assert_all_called=False) as router:
             router.post(re.compile(rf"{TELEGRAM}/bot.*/sendMessage")).mock(return_value=telegram_response)
