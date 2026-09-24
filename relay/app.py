@@ -24,6 +24,10 @@ def configure_logging(level: str) -> None:
         level=getattr(logging, level.upper(), logging.INFO),
         format="%(asctime)s %(levelname)s %(name)s %(message)s",
     )
+    # httpx пишет каждый запрос с полным URL, а у Telegram токен бота — часть URL.
+    # Ниже WARNING эти логгеры не опускаются, что бы ни стояло в log_level.
+    for name in ("httpx", "httpcore"):
+        logging.getLogger(name).setLevel(logging.WARNING)
 
 
 async def validation_error_handler(_: Request, exc: Exception) -> JSONResponse:
