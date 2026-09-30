@@ -35,6 +35,13 @@ class TestChannelAuth:
     def test_an_expired_token_is_rejected(self, client) -> None:
         assert client.get("/ready", headers=auth_header(expired=True)).status_code == 401
 
+    def test_a_token_from_a_clock_two_minutes_ahead_is_accepted(self, client) -> None:
+        # Серверы не обязаны идти секунда в секунду: отставшие часы релея не должны рвать канал.
+        assert client.get("/ready", headers=auth_header(clock_ahead_seconds=120)).status_code == 200
+
+    def test_a_token_from_a_clock_far_ahead_is_rejected(self, client) -> None:
+        assert client.get("/ready", headers=auth_header(clock_ahead_seconds=900)).status_code == 401
+
     def test_a_foreign_issuer_is_rejected(self, client) -> None:
         assert client.get("/ready", headers=auth_header(issuer="somebody-else")).status_code == 401
 

@@ -51,7 +51,9 @@ class ChannelConfig:
     outbound_audience: str
     algorithm: str = "HS256"
     ttl_seconds: int = 300
-    leeway_seconds: int = 30
+    # Часы двух серверов расходятся: на 32 секундах при допуске 30 релей двое суток
+    # отвергал всё с «token is not yet valid». Допуск — минуты, а не секунды.
+    leeway_seconds: int = 300
 
 
 @dataclass(frozen=True)
@@ -96,7 +98,7 @@ def load_config() -> Config:
             inbound_audience=os.environ.get("CHANNEL_INBOUND_AUDIENCE", "relay"),
             outbound_audience=os.environ.get("CHANNEL_OUTBOUND_AUDIENCE", "main"),
             ttl_seconds=_int("CHANNEL_JWT_TTL_SECONDS", 300),
-            leeway_seconds=_int("CHANNEL_JWT_LEEWAY_SECONDS", 30),
+            leeway_seconds=_int("CHANNEL_JWT_LEEWAY_SECONDS", 300),
         ),
         telegram=TelegramConfig(
             api_base_url=os.environ.get("TELEGRAM_API_BASE_URL", "https://api.telegram.org"),

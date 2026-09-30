@@ -32,14 +32,20 @@ def config(tmp_path) -> Config:
     )
 
 
-def token(*, audience: str = "relay", issuer: str = "marketplace-auto", expired: bool = False) -> str:
-    now = datetime.now(UTC)
+def token(
+    *,
+    audience: str = "relay",
+    issuer: str = "marketplace-auto",
+    expired: bool = False,
+    clock_ahead_seconds: int = 0,
+) -> str:
+    now = datetime.now(UTC) + timedelta(seconds=clock_ahead_seconds)
     return jwt.encode(
         {
             "sub": "main",
             "jti": "test-token",
-            "iat": now - timedelta(seconds=600 if expired else 0),
-            "exp": now - timedelta(seconds=300) if expired else now + timedelta(seconds=300),
+            "iat": now - timedelta(seconds=3900 if expired else 0),
+            "exp": now - timedelta(seconds=3600) if expired else now + timedelta(seconds=300),
             "iss": issuer,
             "aud": audience,
         },
